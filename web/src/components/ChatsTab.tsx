@@ -3,6 +3,7 @@ import { useApp } from '../store';
 import { api, ApiError, type CircleSummary } from '../auth/api';
 import { fmtPreview, nickColor, initials } from '../chat/format';
 import { CreateCircleModal } from './CreateCircleModal';
+import { useDisplayName } from './Avatar';
 
 /**
  * Combined "Chats" view: your joined rooms on top, a directory of circles to
@@ -14,6 +15,7 @@ export function ChatsTab() {
   const session = useApp((s) => s.session);
   const guest = useApp((s) => s.guest);
   const joinChannel = useApp((s) => s.joinChannel);
+  const resolveProfiles = useApp((s) => s.resolveProfiles);
 
   const [circles, setCircles] = useState<CircleSummary[] | null>(null);
   const [selected, setSelected] = useState<CircleSummary | null>(null);
@@ -41,6 +43,16 @@ export function ChatsTab() {
   // rooms list above.
   const joinedChannelNames = new Set(rooms.map((r) => r.name));
   const discover = (circles ?? []).filter((c) => !joinedChannelNames.has(c.channel));
+
+  // Resolve the Circles profiles of the latest-message senders so room
+  // previews show usernames, not DID nicks.
+  const previewAuthors = rooms
+    .map((ch) => ch.messages[ch.messages.length - 1]?.from)
+    .filter((f): f is string => !!f)
+    .join(',');
+  useEffect(() => {
+    if (previewAuthors) resolveProfiles(previewAuthors.split(','));
+  }, [previewAuthors, resolveProfiles]);
 
   const join = async (circle: CircleSummary) => {
     setJoinError(null);
@@ -122,7 +134,11 @@ export function ChatsTab() {
                       ) : null}
                     </div>
                     <div className="truncate text-xs text-ink-dim">
-                      {last ? `${last.from}: ${fmtPreview(last.text)}` : ch.topic || 'no messages yet'}
+                      {last ? (
+                        <RoomPreview from={last.from} text={last.text} />
+                      ) : (
+                        ch.topic || 'no messages yet'
+                      )}
                     </div>
                   </div>
                 </button>
@@ -237,6 +253,15 @@ export function ChatsTab() {
         />
       ) : null}
     </div>
+  );
+}
+
+function RoomPreview({ from, text }: { from: string; text: string }) {
+  const name = useDisplayName(from);
+  return (
+    <>
+      {name}: {fmtPreview(text)}
+    </>
   );
 }
 

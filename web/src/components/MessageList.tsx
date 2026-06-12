@@ -33,8 +33,16 @@ export function MessageList({ channel, messages }: { channel: string; messages: 
   const nick = useApp((s) => s.nick);
   const guest = useApp((s) => s.guest);
   const firstRunChipSeen = useApp((s) => s.firstRunChipSeen);
+  const resolveProfiles = useApp((s) => s.resolveProfiles);
+  const myProfile = useApp((s) => (nick ? s.profiles[nick] : null));
+  const myName = myProfile?.displayName || nick;
   const endRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+
+  // Make sure our own nick is resolved so the chip shows the Circles username.
+  useEffect(() => {
+    if (nick && !guest) resolveProfiles([nick]);
+  }, [nick, guest, resolveProfiles]);
 
   useEffect(() => {
     const box = boxRef.current;
@@ -54,9 +62,9 @@ export function MessageList({ channel, messages }: { channel: string; messages: 
         </button>
       ) : null}
 
-      {!guest && !firstRunChipSeen && nick ? (
+      {!guest && !firstRunChipSeen && myName ? (
         <div className="mx-auto my-3 max-w-[85%] rounded-xl border border-chai/40 bg-chai/10 px-3 py-2 text-center text-xs text-chai-soft">
-          ✓ you're chatting as <b>{nick}</b> — no signup needed
+          ✓ you're chatting as <b>{myName}</b> — no signup needed
         </div>
       ) : null}
 
