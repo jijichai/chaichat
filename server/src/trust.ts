@@ -78,3 +78,15 @@ export async function isMutualTrust(a: string, b: string): Promise<boolean> {
   const [aTrustsB, bTrustsA] = await Promise.all([trusts(a, b), trusts(b, a)]);
   return aTrustsB && bTrustsA;
 }
+
+/**
+ * True iff `member` is a member of the Circles group `group`.
+ *
+ * Circles group membership is represented as a directed trust edge from the
+ * group avatar to the member (the group trusts everyone it has admitted), so
+ * membership is exactly `group trusts member`.
+ */
+export async function isGroupMember(group: string, member: string): Promise<boolean> {
+  if (group.toLowerCase() === member.toLowerCase()) return true; // the group itself
+  return trusts(group, member);
+}

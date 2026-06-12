@@ -21,7 +21,7 @@ export interface TokensResponse {
   backupEmailSet: boolean;
 }
 
-export type CircleMode = 'open' | 'mutual-trust';
+export type CircleMode = 'open' | 'mutual-trust' | 'circles-group';
 
 export interface CircleSummary {
   slug: string;
@@ -31,6 +31,10 @@ export interface CircleSummary {
   communityDid: string;
   groupAddress: string | null;
   mode: CircleMode;
+  /** For mode='circles-group': the Circles group whose members may join. */
+  gateGroupAddress?: string | null;
+  /** Built-in groupchat pinned to the top of the list. */
+  pinned?: boolean;
   memberCount: number;
   joined?: boolean;
 }

@@ -25,8 +25,29 @@ import { aesEncrypt, jwtExpiresAtMs, sha256Hex } from './crypto';
 import { slugify, isValidHandlePart } from './handles';
 import { handleIrcProxy } from './wsproxy';
 import { fetchCirclesProfile } from './circlesProfiles';
-import { isMutualTrust } from './trust';
-import type { IdentityRow } from './storage/types';
+import { isMutualTrust, isGroupMember } from './trust';
+import type { CircleRow, IdentityRow } from './storage/types';
+
+/**
+ * Built-in groupchats seeded on first use and pinned to the top of the list.
+ * "Circles Backers" is gated by membership of its on-chain Circles group: only
+ * Safes the group (gateGroupAddress) trusts may join.
+ */
+const SEED_CIRCLES: ReadonlyArray<{
+  slug: string;
+  name: string;
+  description: string;
+  gateGroupAddress: string;
+}> = [
+  {
+    slug: 'circles-backers',
+    name: 'Circles Backers',
+    description: 'Private groupchat for Circles backers — members of the Circles Backers group.',
+    gateGroupAddress: '0x1aca75e38263c79d9d4f10df0635cc6fcfe6f026',
+  },
+];
+
+const PINNED_SLUGS = new Set(SEED_CIRCLES.map((s) => s.slug));
 
 // Per-instance Circles-profile cache (name + avatar rarely change).
 const PROFILE_TTL_MS = 10 * 60 * 1000;
@@ -55,6 +76,64 @@ function circlesEnabled(env: Env): boolean {
   // Read defensively: the var is unset by default (not in wrangler.jsonc), so
   // it isn't in the generated Env type. Enabled only when explicitly "1".
   return (env as { CIRCLES_ENABLED?: string }).CIRCLES_ENABLED === '1';
+}
+
+/**
+ * Idempotently create the built-in pinned circles (e.g. Circles Backers).
+ * Runs lazily on the circles-list endpoint: the per-circle ePDS account create
+ * happens only once (when the row is missing); afterwards it's a cheap slug
+ * lookup. Best-effort — a transient failure just leaves it to the next call.
+ */
+async function ensureSeedCircles(store: Storage, env: Env): Promise<void> {
+  for (const seed of SEED_CIRCLES) {
+    try {
+      if (await store.getCircle(seed.slug)) continue;
+
+      // Community DID for the built-in groupchat (its portable identity).
+      let communityDid: string;
+      try {
+        const created = await createEpdsAccount(
+          { baseUrl: env.EPDS_BASE_URL, apiKey: env.EPDS_API_KEY, devFake: env.DEV_FAKE_EPDS },
+          seed.slug,
+          `circle-${seed.slug}@noreply.${env.APP_DOMAIN}`,
+        );
+        communityDid = created.did;
+      } catch (err) {
+        if (isHandleTakenError(err)) {
+          // The DID handle is taken (seeded before, row since deleted, or name
+          // clash) — fall back to a deterministic placeholder so the pinned row
+          // can still exist. The channel works regardless of this value.
+          communityDid = `did:web:${seed.slug}.${env.APP_DOMAIN}`;
+        } else {
+          log('warn', 'seed circle DID create failed', { slug: seed.slug });
+          continue;
+        }
+      }
+
+      const row: CircleRow = {
+        id: crypto.randomUUID(),
+        slug: seed.slug,
+        name: seed.name,
+        description: seed.description,
+        channel: `#${seed.slug}`,
+        communityDid,
+        groupAddress: null,
+        ownerAddress: null,
+        creatorIdentityId: 'system',
+        mode: 'circles-group',
+        gateGroupAddress: seed.gateGroupAddress,
+        createdAt: Date.now(),
+      };
+      try {
+        await store.insertCircle(row);
+        log('info', 'seeded pinned circle', { slug: seed.slug });
+      } catch {
+        // UNIQUE(slug) race with a concurrent request — already seeded.
+      }
+    } catch (err) {
+      log('warn', 'ensureSeedCircles error', { slug: seed.slug, err: String(err) });
+    }
+  }
 }
 
 async function requireSession(c: Context<{ Bindings: Env; Variables: Vars }>, next: Next) {
@@ -415,6 +494,7 @@ export function buildApp(env: Env) {
 
   app.get('/api/circles', async (c) => {
     const store = c.get('store');
+    await ensureSeedCircles(store, c.env);
     const circles = await store.listCircles();
     let joined = new Set<string>();
     const auth = c.req.header('authorization') ?? '';
@@ -422,13 +502,20 @@ export function buildApp(env: Env) {
       const claims = await verifySessionJwt(c.env.SESSION_SECRET, auth.slice(7).trim());
       if (claims) joined = new Set(await store.listJoinedCircleSlugs(claims.iid));
     }
+    // Pinned (built-in) circles always sort to the top.
+    const sorted = [...circles].sort((a, b) => {
+      const pa = PINNED_SLUGS.has(a.slug) ? 0 : 1;
+      const pb = PINNED_SLUGS.has(b.slug) ? 0 : 1;
+      if (pa !== pb) return pa - pb;
+      return b.createdAt - a.createdAt;
+    });
     return c.json({
       // Groupchat creation is always available now (lightweight: DID + channel
       // + access mode, no on-chain group). The on-chain Base Group is the only
       // thing gated by circlesEnabled.
       createEnabled: true,
       onChainEnabled: circlesEnabled(c.env),
-      circles: circles.map((x) => ({
+      circles: sorted.map((x) => ({
         slug: x.slug,
         name: x.name,
         description: x.description,
@@ -436,6 +523,8 @@ export function buildApp(env: Env) {
         communityDid: x.communityDid,
         groupAddress: x.groupAddress,
         mode: x.mode,
+        gateGroupAddress: x.gateGroupAddress,
+        pinned: PINNED_SLUGS.has(x.slug),
         memberCount: x.memberCount,
         joined: joined.has(x.slug),
       })),
@@ -511,6 +600,7 @@ export function buildApp(env: Env) {
       ownerAddress: owner,
       creatorIdentityId: identity.id,
       mode,
+      gateGroupAddress: null,
       createdAt: now,
     };
     await store.insertCircle(row);
@@ -596,6 +686,46 @@ export function buildApp(env: Env) {
             403,
           );
         }
+      }
+    }
+
+    // ——— Circles-group membership access control ———
+    // Only members of the gating Circles group (the group trusts their Safe)
+    // may join. Used by built-in pinned circles like "Circles Backers".
+    if (circle.mode === 'circles-group') {
+      const group = circle.gateGroupAddress;
+      if (!group) {
+        return c.json({ error: 'GroupMembershipRequired', message: 'groupchat has no group anchor' }, 403);
+      }
+      if (identity.platform !== 'circles') {
+        return c.json(
+          {
+            error: 'GroupMembershipRequired',
+            message: 'connect a Circles account to join this groupchat',
+            gateGroupAddress: group,
+          },
+          403,
+        );
+      }
+      let member = false;
+      try {
+        member =
+          c.env.DEV_FAKE_EPDS === '1'
+            ? group.slice(-1) === identity.platformUserId.slice(-1)
+            : await isGroupMember(group, identity.platformUserId);
+      } catch (err) {
+        log('warn', 'group membership check failed', { err: String(err) });
+        return c.json({ error: 'TrustCheckUnavailable' }, 503);
+      }
+      if (!member) {
+        return c.json(
+          {
+            error: 'GroupMembershipRequired',
+            message: 'only members of this Circles group can join',
+            gateGroupAddress: group,
+          },
+          403,
+        );
       }
     }
 

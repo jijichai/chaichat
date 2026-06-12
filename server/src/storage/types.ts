@@ -14,7 +14,7 @@ export interface IdentityRow {
   lastSeenAt: number;
 }
 
-export type CircleMode = 'open' | 'mutual-trust';
+export type CircleMode = 'open' | 'mutual-trust' | 'circles-group';
 
 export interface CircleRow {
   id: string;
@@ -27,6 +27,9 @@ export interface CircleRow {
   ownerAddress: string | null;
   creatorIdentityId: string;
   mode: CircleMode;
+  /** For mode='circles-group': the external Circles group whose members may
+   *  join. Membership = this group trusts the joiner's Safe. */
+  gateGroupAddress: string | null;
   createdAt: number;
 }
 
