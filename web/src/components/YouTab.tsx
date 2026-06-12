@@ -7,7 +7,6 @@ type Me = Awaited<ReturnType<typeof api.me>>;
 
 export function YouTab() {
   const session = useApp((s) => s.session);
-  const guest = useApp((s) => s.guest);
   const nick = useApp((s) => s.nick);
   const conn = useApp((s) => s.conn);
   const host = useApp((s) => s.host);
@@ -45,7 +44,11 @@ export function YouTab() {
 
   const youName = (session && myProfile?.displayName) || session?.nick || '';
 
-  if (guest || !session) {
+  // Show the guest screen only when there is genuinely no identity. If we have
+  // a session we show the real identity card even when chat fell back to a
+  // did:key transport (guest === true but the DID/handle are real) — otherwise
+  // an authenticated Circles user is wrongly shown "you're browsing as a guest".
+  if (!session) {
     const inCircles = host === 'circles';
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8">

@@ -39,10 +39,15 @@ export function MessageList({ channel, messages }: { channel: string; messages: 
   const endRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Make sure our own nick is resolved so the chip shows the Circles username.
+  // Make sure our own nick is resolved so the chip + our own messages show the
+  // Circles username/avatar. Do this even in the guest-FALLBACK state: when
+  // pds-session SASL is rejected we chat under a did:key but keep the real
+  // handle as the nick (e.g. a Circles user shown as "daring-orchid-46"). That
+  // nick still resolves to a Circles profile, so don't gate on `guest` — the
+  // resolver already skips genuine freeq guest names (guest-*/chai-guest-*).
   useEffect(() => {
-    if (nick && !guest) resolveProfiles([nick]);
-  }, [nick, guest, resolveProfiles]);
+    if (nick) resolveProfiles([nick]);
+  }, [nick, resolveProfiles]);
 
   useEffect(() => {
     const box = boxRef.current;
