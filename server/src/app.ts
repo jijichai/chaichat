@@ -51,6 +51,8 @@ const PINNED_SLUGS = new Set(SEED_CIRCLES.map((s) => s.slug));
 
 // Per-instance Circles-profile cache (name + avatar rarely change).
 const PROFILE_TTL_MS = 10 * 60 * 1000;
+// Negative results expire fast so a not-yet-indexed profile appears quickly.
+const PROFILE_MISS_TTL_MS = 20 * 1000;
 const profileCache = new Map<
   string,
   { value: { displayName: string | null; avatar: string | null }; expires: number }
@@ -497,7 +499,14 @@ export function buildApp(env: Env) {
           const profile = await fetchCirclesProfile(identity.platformUserId);
           if (profile) value = { displayName: profile.name, avatar: profile.avatar };
         }
-        profileCache.set(nick, { value, expires: Date.now() + PROFILE_TTL_MS });
+        // Cache hits for the full TTL, but misses only briefly: a just-created
+        // identity (or one whose Circles profile isn't indexed yet) should
+        // become visible within seconds, not after a 10-minute negative cache.
+        const resolved = !!(value.displayName || value.avatar);
+        profileCache.set(nick, {
+          value,
+          expires: Date.now() + (resolved ? PROFILE_TTL_MS : PROFILE_MISS_TTL_MS),
+        });
         out[nick] = value;
       }),
     );

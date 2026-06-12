@@ -84,8 +84,16 @@ interface AppState {
   sentFirstMessage: boolean;
 
   // Circles profiles resolved by nick (username + avatar data URI). null value
-  // = resolved but no Circles profile (fall back to nick + initials).
+  // = either in-flight, or resolved with no profile (fall back to initials).
+  // A "miss" (resolved-absent) is recorded in profileMisses so it can be
+  // retried later — a profile may not be indexed yet when first looked up
+  // (notably a user's OWN freshly-created identity), and we must not cache the
+  // absence forever or that user never sees their own avatar until reload.
   profiles: Record<string, CirclesIdentity | null>;
+  /** nick → epoch ms of last resolved-absent result; gates re-fetch. */
+  profileMisses: Record<string, number>;
+  /** nicks with an in-flight profile fetch (de-dup; not for rendering). */
+  profilesInFlight: Set<string>;
 
   // ui
   tab: Tab;
@@ -247,6 +255,8 @@ export const useApp = create<AppState>((set, get) => {
     firstRunChipSeen: false,
     sentFirstMessage: false,
     profiles: {},
+    profileMisses: {},
+    profilesInFlight: new Set<string>(),
 
     tab: 'chats',
     backupOpen: false,
@@ -438,31 +448,53 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     resolveProfiles: (nicks) => {
+      // Re-fetch a missed profile at most this often. A profile can be absent
+      // on first lookup (not indexed yet) and appear shortly after — retrying
+      // lets the avatar fill in without a reload. Short enough to feel live.
+      const MISS_RETRY_MS = 30_000;
       // Fetch Circles profiles for nicks we haven't resolved yet. Guests
       // (nick starting "guest-"/"chai-guest-") have no Circles identity — skip.
-      const known = get().profiles;
-      const want = [...new Set(nicks)].filter(
-        (n) => n && !(n in known) && !/^(chai-)?guest-/.test(n),
-      );
+      const { profiles: known, profileMisses: misses, profilesInFlight } = get();
+      const now = Date.now();
+      const want = [...new Set(nicks)].filter((n) => {
+        if (!n || /^(chai-)?guest-/.test(n)) return false;
+        if (profilesInFlight.has(n)) return false; // already fetching
+        if (known[n]) return false; // have a real profile
+        const missedAt = misses[n];
+        if (missedAt !== undefined && now - missedAt < MISS_RETRY_MS) return false;
+        return true;
+      });
       if (want.length === 0) return;
-      // Mark as in-flight (null) so we don't refetch while the request runs.
-      set((s) => ({
-        profiles: { ...s.profiles, ...Object.fromEntries(want.map((n) => [n, null])) },
-      }));
+      // Track in-flight separately from the rendered map so a pending fetch
+      // doesn't read as "resolved-absent".
+      want.forEach((n) => profilesInFlight.add(n));
       void api
         .profiles(want)
         .then((r) => {
           set((s) => {
-            const next = { ...s.profiles };
+            const nextProfiles = { ...s.profiles };
+            const nextMisses = { ...s.profileMisses };
             for (const nick of want) {
               const p = r.profiles[nick];
-              next[nick] = p && (p.displayName || p.avatar) ? p : null;
+              if (p && (p.displayName || p.avatar)) {
+                nextProfiles[nick] = p;
+                delete nextMisses[nick];
+              } else {
+                nextProfiles[nick] = null; // render falls back to initials
+                nextMisses[nick] = Date.now(); // but allow a later retry
+              }
             }
-            return { profiles: next };
+            return { profiles: nextProfiles, profileMisses: nextMisses };
           });
         })
         .catch(() => {
-          // leave as null (fall back to nick + initials)
+          // Network error — record a miss so we retry later, don't wedge.
+          set((s) => ({
+            profileMisses: { ...s.profileMisses, ...Object.fromEntries(want.map((n) => [n, Date.now()])) },
+          }));
+        })
+        .finally(() => {
+          want.forEach((n) => profilesInFlight.delete(n));
         });
     },
   };
