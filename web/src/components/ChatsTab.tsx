@@ -271,7 +271,7 @@ export function ChatsTab() {
               </div>
             </div>
             {selected.description ? (
-              <p className="pb-2 text-sm text-ink-dim">"{selected.description}"</p>
+              <p className="pb-2 text-sm text-ink-dim">{selected.description}</p>
             ) : null}
             {selected.mode === 'mutual-trust' ? (
               <p className="pb-2 text-xs text-ink-dim">

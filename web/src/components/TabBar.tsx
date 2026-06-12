@@ -1,7 +1,7 @@
 import { useApp, type Tab } from '../store';
 
 const TABS: Array<{ id: Tab; label: string; icon: string }> = [
-  { id: 'chats', label: 'Chats', icon: '💬' },
+  { id: 'chats', label: 'Chat', icon: '💬' },
   { id: 'you', label: 'You', icon: '👤' },
 ];
 
