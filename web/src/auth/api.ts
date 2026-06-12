@@ -87,6 +87,12 @@ export const api = {
       platform: string;
       displayName: string | null;
       backupEmailSet: boolean;
+      safeAddress: string | null;
+      circlesProfile: {
+        name: string | null;
+        description: string | null;
+        registeredName: string | null;
+      } | null;
     }>('/api/me', {}, sessionJwt),
 
   backupStart: (sessionJwt: string, email: string) =>

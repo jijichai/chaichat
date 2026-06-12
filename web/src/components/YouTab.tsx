@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../store';
+import { api } from '../auth/api';
 import { Avatar } from './Avatar';
+
+type Me = Awaited<ReturnType<typeof api.me>>;
 
 export function YouTab() {
   const session = useApp((s) => s.session);
@@ -14,13 +17,31 @@ export function YouTab() {
   const resolveProfiles = useApp((s) => s.resolveProfiles);
   const myProfile = useApp((s) => (session ? s.profiles[session.nick] : null));
   const [copied, setCopied] = useState(false);
+  const [copiedSafe, setCopiedSafe] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
 
   // Resolve our own Circles profile so the identity card shows the real
   // username + avatar.
   useEffect(() => {
     if (session) resolveProfiles([session.nick]);
   }, [session, resolveProfiles]);
+
+  // Pull the Safe address + on-chain Circles details for the identity card.
+  useEffect(() => {
+    if (!session) {
+      setMe(null);
+      return;
+    }
+    let alive = true;
+    api
+      .me(session.sessionJwt)
+      .then((r) => alive && setMe(r))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [session]);
 
   const youName = (session && myProfile?.displayName) || session?.nick || '';
 
@@ -68,6 +89,18 @@ export function YouTab() {
     });
   };
 
+  const safe = me?.safeAddress ?? null;
+  const copySafe = () => {
+    if (!safe) return;
+    void navigator.clipboard?.writeText(safe).then(() => {
+      setCopiedSafe(true);
+      setTimeout(() => setCopiedSafe(false), 1500);
+    });
+  };
+  const shortSafe = safe ? `${safe.slice(0, 6)}…${safe.slice(-4)}` : '';
+  const regName = me?.circlesProfile?.registeredName || null;
+  const bio = me?.circlesProfile?.description || null;
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="flex flex-col items-center gap-2 px-6 pb-4 pt-8">
@@ -83,6 +116,41 @@ export function YouTab() {
           {conn}
         </div>
       </div>
+
+      {safe ? (
+        <div className="mx-4 mb-3 rounded-2xl border border-border bg-surface p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-ink-dim">
+            Circles identity
+          </div>
+          <div className="mt-2 flex flex-col gap-2 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-ink-dim">Address</span>
+              <button
+                onClick={copySafe}
+                className="rounded bg-bg px-2 py-1 font-mono text-xs active:opacity-70"
+                title={safe}
+              >
+                {copiedSafe ? 'copied ✓' : `${shortSafe} 📋`}
+              </button>
+            </div>
+            {regName ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-dim">Name</span>
+                <span className="truncate font-medium">{regName}</span>
+              </div>
+            ) : null}
+            {bio ? (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-ink-dim">Bio</span>
+                <span className="text-ink">{bio}</span>
+              </div>
+            ) : null}
+          </div>
+          <p className="mt-2 text-[10px] text-ink-dim/70">
+            your Circles wallet on Gnosis — this is the address other members trust
+          </p>
+        </div>
+      ) : null}
 
       <div className="mx-4 rounded-2xl border border-border bg-surface p-4">
         {session.backupEmailSet ? (

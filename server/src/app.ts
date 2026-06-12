@@ -352,6 +352,20 @@ export function buildApp(env: Env) {
     const claims = c.get('session')!;
     const identity = await store.getIdentityById(claims.iid);
     if (!identity) return c.json({ error: 'Unauthorized' }, 401);
+
+    // For Circles accounts, surface the Safe address + the live Circles profile
+    // (bio, on-chain registered name) so the You tab can show native details.
+    const safeAddress = identity.platform === 'circles' ? identity.platformUserId : null;
+    let circlesProfile: {
+      name: string | null;
+      description: string | null;
+      registeredName: string | null;
+    } | null = null;
+    if (safeAddress && c.env.DEV_FAKE_EPDS !== '1') {
+      const p = await fetchCirclesProfile(safeAddress);
+      if (p) circlesProfile = { name: p.name, description: p.description, registeredName: p.registeredName };
+    }
+
     return c.json({
       did: identity.did,
       handle: identity.handle,
@@ -359,6 +373,8 @@ export function buildApp(env: Env) {
       displayName: identity.displayName,
       backupEmailSet: identity.backupEmailSet,
       circlesEnabled: circlesEnabled(c.env),
+      safeAddress,
+      circlesProfile,
     });
   });
 

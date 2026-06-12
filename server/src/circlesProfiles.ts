@@ -12,12 +12,17 @@ export interface CirclesProfile {
   name: string | null;
   /** data: URI (base64) or null. */
   avatar: string | null;
+  description: string | null;
+  /** On-chain Circles name (ENS-like), if registered. */
+  registeredName: string | null;
 }
 
 interface SearchResult {
   name?: string;
   address?: string;
   CID?: string;
+  description?: string;
+  registeredName?: string | null;
 }
 
 interface ProfileBlob {
@@ -55,7 +60,12 @@ export async function fetchCirclesProfile(address: string): Promise<CirclesProfi
       }
     }
 
-    return { name: hit.name ?? null, avatar };
+    return {
+      name: hit.name ?? null,
+      avatar,
+      description: hit.description ?? null,
+      registeredName: hit.registeredName ?? null,
+    };
   } catch {
     return null;
   }
