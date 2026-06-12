@@ -1,0 +1,41 @@
+{
+  "name": "@freeq/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for building freeq IRC clients with AT Protocol identity and E2EE (vendored)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./e2ee": {
+      "import": "./dist/e2ee.js",
+      "types": "./dist/e2ee.d.ts"
+    },
+    "./eimg": {
+      "import": "./dist/eimg.js",
+      "types": "./dist/eimg.d.ts"
+    },
+    "./profiles": {
+      "import": "./dist/profiles.js",
+      "types": "./dist/profiles.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "idb": "^8.0.3"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  },
+  "license": "MIT"
+}

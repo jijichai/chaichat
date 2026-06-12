@@ -1,0 +1,49 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chaichat",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": "../web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/irc"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "chaichat",
+      "database_id": "a845bfd3-fdee-4bfd-b6b6-f82e553b4f54"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "TXQUEUE", "class_name": "TxQueue" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TxQueue"] }],
+
+  "send_email": [{ "name": "EMAIL" }],
+
+  "vars": {
+    // Serving domain. Switch to chaichat.attps.cloud once the zone is on
+    // Cloudflare and the custom domain is attached.
+    "APP_DOMAIN": "chaichat.attps.workers.dev",
+    "EPDS_BASE_URL": "https://auth.self.surf",
+    "PDS_URL": "https://self.surf",
+    "GNOSIS_RPC_URL": "https://rpc.gnosischain.com",
+    "EMAIL_FROM": "chaichat@attps.cloud"
+    // CIRCLES_ENABLED is intentionally NOT set here (defaults off). Circle
+    // creation needs a funded operator EOA (on-chain Base Group); set
+    // CIRCLES_ENABLED="1" in the dashboard (or .dev.vars locally) to enable.
+  },
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+
+  // Secrets (wrangler secret put): EPDS_API_KEY, SESSION_SECRET, TOKEN_ENC_KEY, OPERATOR_PRIVATE_KEY
+  // Custom domain chaichat.attps.cloud is attached at deploy time (routes or dashboard).
+}

@@ -1,0 +1,7 @@
+# Served by Cloudflare Workers static assets.
+# NOTE: no frame-ancestors / X-Frame-Options — chaichat MUST be embeddable
+# inside the Circles miniapp host iframe.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self' wss://chaichat.attps.workers.dev wss://chaichat.attps.cloud https://self.surf https://auth.self.surf https://rpc.aboutcircles.com https://public.api.bsky.app; font-src 'self'; object-src 'none'; base-uri 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

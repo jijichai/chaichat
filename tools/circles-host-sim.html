@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>chaichat — Circles host simulator</title>
+  <style>
+    body { font: 13px ui-monospace, monospace; background: #16161e; color: #d6d6e2; margin: 0; display: flex; height: 100vh; }
+    #left { width: 420px; display: flex; flex-direction: column; border-right: 1px solid #2a2a38; }
+    iframe { flex: 1; border: 0; background: #0b0b10; }
+    #panel { padding: 10px; display: flex; flex-direction: column; gap: 8px; flex: 1; overflow: hidden; }
+    button { background: #d98c3f; color: #16161e; border: 0; border-radius: 8px; padding: 8px 10px; font-weight: 600; cursor: pointer; }
+    button.alt { background: #2a2a38; color: #d6d6e2; }
+    input { background: #0b0b10; border: 1px solid #2a2a38; color: #d6d6e2; border-radius: 6px; padding: 6px 8px; }
+    #log { flex: 1; overflow: auto; background: #0b0b10; border-radius: 8px; padding: 8px; white-space: pre-wrap; word-break: break-all; }
+    .row { display: flex; gap: 6px; align-items: center; }
+    label { font-size: 11px; color: #9a9aae; }
+    h1 { font-size: 14px; margin: 10px; }
+  </style>
+</head>
+<body>
+  <div id="left">
+    <h1>🟢 Circles host simulator</h1>
+    <div id="panel">
+      <div class="row">
+        <input id="url" value="http://localhost:5173/" style="flex:1" />
+        <button class="alt" onclick="reloadApp()">load</button>
+      </div>
+      <div class="row">
+        <input id="addr" value="0x42acf1eC2a05e9D3724A4C24De851DDC9DfFA15c" style="flex:1" />
+      </div>
+      <div class="row">
+        <button onclick="connect()">connect wallet</button>
+        <button class="alt" onclick="disconnect()">disconnect</button>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="autosign" checked /> auto-approve signatures</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="hasWallet" checked /> wallet exists (affects create-account)</label>
+      </div>
+      <div id="log"></div>
+    </div>
+  </div>
+  <iframe id="app" src="http://localhost:5173/"></iframe>
+
+  <script>
+    const iframe = document.getElementById('app');
+    const log = (dir, data) => {
+      const el = document.getElementById('log');
+      el.textContent += `${dir} ${JSON.stringify(data)}\n`;
+      el.scrollTop = el.scrollHeight;
+    };
+    const post = (msg) => {
+      log('→app', msg);
+      iframe.contentWindow.postMessage(msg, '*');
+    };
+    const addr = () => document.getElementById('addr').value.trim();
+    let connected = false;
+
+    function reloadApp() {
+      iframe.src = document.getElementById('url').value;
+    }
+    function connect() {
+      connected = true;
+      post({ type: 'wallet_connected', address: addr() });
+    }
+    function disconnect() {
+      connected = false;
+      post({ type: 'wallet_disconnected' });
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.source !== iframe.contentWindow) return;
+      const d = event.data;
+      if (!d || !d.type) return;
+      log('app→', d);
+
+      switch (d.type) {
+        case 'request_address':
+          if (connected) post({ type: 'wallet_connected', address: addr() });
+          break;
+        case 'sign_message': {
+          const approve = document.getElementById('autosign').checked || confirm(`Sign?\n\n${d.message}`);
+          if (approve) {
+            // DEV signature — accepted by the server only when DEV_FAKE_AUTH=1
+            post({ type: 'sign_success', requestId: d.requestId, signature: '0xDEVSIG', verified: true });
+          } else {
+            post({ type: 'sign_rejected', requestId: d.requestId, reason: 'user declined' });
+          }
+          break;
+        }
+        case 'request_create_account': {
+          if (document.getElementById('hasWallet').checked || confirm('Create Circles account?')) {
+            connected = true;
+            post({ type: 'auth_success', requestId: d.requestId, address: addr() });
+          } else {
+            post({ type: 'auth_rejected', requestId: d.requestId, reason: 'user cancelled' });
+          }
+          break;
+        }
+        case 'send_transactions':
+          post({ type: 'tx_success', requestId: d.requestId, hashes: ['0x' + 'ab'.repeat(32)] });
+          break;
+      }
+    });
+  </script>
+</body>
+</html>

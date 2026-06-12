@@ -1,0 +1,24 @@
+{
+  "name": "chaichat",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd",
+      "sharp"
+    ]
+  },
+  "scripts": {
+    "build": "pnpm --filter @freeq/sdk build && pnpm --filter web build && pnpm --filter server build",
+    "dev": "pnpm --filter web dev",
+    "dev:worker": "pnpm --filter server dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "deploy": "pnpm build && pnpm --filter server deploy"
+  }
+}

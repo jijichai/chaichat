@@ -1,0 +1,11 @@
+# Copy to .dev.vars for local development (never commit .dev.vars)
+EPDS_API_KEY=dev-placeholder
+SESSION_SECRET=dev-session-secret-change-me-0000000
+TOKEN_ENC_KEY=7o2qyXxiapCXFT7xkDSLerFXh4o4wVqYFD21lTRr3T4=
+OPERATOR_PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000001
+# DEV_FAKE_AUTH=1 accepts the host simulator's 0xDEVSIG signature (skips EIP-1271)
+DEV_FAKE_AUTH=1
+# DEV_FAKE_EPDS=1 fakes ePDS account creation/refresh locally (no API key needed)
+DEV_FAKE_EPDS=1
+DEV_FAKE_CHAIN=1
+CIRCLES_ENABLED=1
