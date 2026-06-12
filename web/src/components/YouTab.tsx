@@ -165,7 +165,7 @@ export function YouTab() {
           <SecurityRow
             state="on"
             title="Verified identity"
-            desc="every message is signed by your DID — nobody can post as you"
+            desc="every message is cryptographically signed by your decentralized identifier"
           />
           <SecurityRow
             state="soon"
@@ -176,6 +176,26 @@ export function YouTab() {
         <p className="mt-3 border-t border-border/50 pt-2 text-[10px] text-ink-dim/70">
           chat is powered by IRC (Internet Relay Chat) — the open, decades-old
           real-time messaging protocol.
+        </p>
+      </div>
+
+      <div className="mx-4 mb-3 rounded-2xl border border-border bg-surface p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-ink-dim">
+          Community DIDs
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-ink-dim">
+          Every groupchat gets its own <b className="text-ink">community DID</b> — a
+          portable identity that belongs to the community itself, not to the person
+          who created it.
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-ink-dim">
+          Because the community's identity is separate from any single member, it can
+          outlive its founder. If the creator goes inactive, ownership of the
+          groupchat can be handed to another member — the community keeps its name,
+          history, and identity instead of dying with one account.
+        </p>
+        <p className="mt-2 text-[10px] text-ink-dim/70">
+          ownership transfer is coming soon.
         </p>
       </div>
 
