@@ -152,6 +152,29 @@ export function YouTab() {
         </div>
       ) : null}
 
+      <div className="mx-4 mb-3 rounded-2xl border border-border bg-surface p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-ink-dim">
+          Chat security
+        </div>
+        <div className="mt-2 flex flex-col gap-2.5">
+          <SecurityRow
+            state="on"
+            title="Encrypted transport"
+            desc="all chat traffic runs over TLS (wss://) to the server"
+          />
+          <SecurityRow
+            state="on"
+            title="Verified identity"
+            desc="every message is signed by your DID — nobody can post as you"
+          />
+          <SecurityRow
+            state="soon"
+            title="End-to-end encryption"
+            desc="message contents are not yet E2E encrypted — the server can read them. trust-gated E2EE for groupchats is coming soon."
+          />
+        </div>
+      </div>
+
       <div className="mx-4 rounded-2xl border border-border bg-surface p-4">
         {session.backupEmailSet ? (
           <>
@@ -195,6 +218,40 @@ export function YouTab() {
           sign out
         </button>
       </div>
+    </div>
+  );
+}
+
+function SecurityRow({
+  state,
+  title,
+  desc,
+}: {
+  state: 'on' | 'soon';
+  title: string;
+  desc: string;
+}) {
+  const on = state === 'on';
+  return (
+    <div className="flex items-start gap-2.5">
+      <span
+        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
+          on ? 'bg-ok/15 text-ok' : 'bg-surface-2 text-ink-dim'
+        }`}
+      >
+        {on ? '✓' : '◌'}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-sm font-medium">
+          {title}
+          {on ? null : (
+            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-ink-dim">
+              soon
+            </span>
+          )}
+        </span>
+        <span className="block text-[11px] text-ink-dim">{desc}</span>
+      </span>
     </div>
   );
 }
