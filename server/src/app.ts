@@ -23,9 +23,9 @@ import {
 import { startBackup, confirmBackup, normalizeEmail, BackupError } from './backup';
 import { aesEncrypt, jwtExpiresAtMs, sha256Hex } from './crypto';
 import { slugify, isValidHandlePart } from './handles';
-import { operatorAddress } from './groups';
 import { handleIrcProxy } from './wsproxy';
 import { fetchCirclesProfile } from './circlesProfiles';
+import { isMutualTrust } from './trust';
 import type { IdentityRow } from './storage/types';
 
 // Per-instance Circles-profile cache (name + avatar rarely change).
@@ -407,7 +407,11 @@ export function buildApp(env: Env) {
       if (claims) joined = new Set(await store.listJoinedCircleSlugs(claims.iid));
     }
     return c.json({
-      circlesEnabled: circlesEnabled(c.env),
+      // Groupchat creation is always available now (lightweight: DID + channel
+      // + access mode, no on-chain group). The on-chain Base Group is the only
+      // thing gated by circlesEnabled.
+      createEnabled: true,
+      onChainEnabled: circlesEnabled(c.env),
       circles: circles.map((x) => ({
         slug: x.slug,
         name: x.name,
@@ -415,6 +419,7 @@ export function buildApp(env: Env) {
         channel: x.channel,
         communityDid: x.communityDid,
         groupAddress: x.groupAddress,
+        mode: x.mode,
         memberCount: x.memberCount,
         joined: joined.has(x.slug),
       })),
@@ -422,7 +427,6 @@ export function buildApp(env: Env) {
   });
 
   app.post('/api/circles', requireSession, async (c) => {
-    if (!circlesEnabled(c.env)) return c.json({ error: 'CirclesDisabled' }, 403);
     const store = c.get('store');
     const claims = c.get('session')!;
     if (!(await allowRate(store, 'circle-create', claims.iid, 3, 24 * 60 * 60 * 1000))) {
@@ -431,15 +435,26 @@ export function buildApp(env: Env) {
     const body = (await c.req.json().catch(() => null)) as {
       name?: string;
       description?: string;
+      mode?: string;
     } | null;
     const name = body?.name?.trim();
     if (!name || name.length < 3 || name.length > 32) {
       return c.json({ error: 'InvalidRequest', message: 'name must be 3-32 chars' }, 400);
     }
+    const mode: 'open' | 'mutual-trust' = body?.mode === 'mutual-trust' ? 'mutual-trust' : 'open';
     const description = body?.description?.trim().slice(0, 280) || null;
 
     const identity = await store.getIdentityById(claims.iid);
     if (!identity) return c.json({ error: 'Unauthorized' }, 401);
+
+    // Mutual-trust groupchats only make sense for a creator who HAS a Circles
+    // Safe (the thing others trust). Guests/email users can only make open ones.
+    if (mode === 'mutual-trust' && identity.platform !== 'circles') {
+      return c.json(
+        { error: 'CirclesAccountRequired', message: 'connect a Circles account to make a mutual-trust groupchat' },
+        400,
+      );
+    }
 
     let slug = slugify(name);
     if (slug.length < 5) slug = `${slug}-${randomToken(3).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 4) || 'chai'}`.slice(0, 20);
@@ -448,7 +463,7 @@ export function buildApp(env: Env) {
     }
     if (await store.getCircle(slug)) return c.json({ error: 'CircleExists' }, 409);
 
-    // ① Community DID for the circle (its portable identity).
+    // ① Community DID for the groupchat (its portable identity).
     let communityDid: string;
     try {
       const created = await createEpdsAccount(
@@ -465,9 +480,9 @@ export function buildApp(env: Env) {
       return c.json({ error: 'AccountServiceUnavailable' }, 502);
     }
 
-    // ② Record the circle; ③ queue on-chain group registration.
-    const owner =
-      identity.platform === 'circles' ? identity.platformUserId : operatorAddress(c.env);
+    // ② Record the groupchat. The creator's Safe is the trust anchor for a
+    // mutual-trust groupchat (others must mutually trust them to join).
+    const owner = identity.platform === 'circles' ? identity.platformUserId : null;
     const now = Date.now();
     const row = {
       id: crypto.randomUUID(),
@@ -479,22 +494,27 @@ export function buildApp(env: Env) {
       groupAddress: null,
       ownerAddress: owner,
       creatorIdentityId: identity.id,
+      mode,
       createdAt: now,
     };
     await store.insertCircle(row);
     await store.addCircleMember(row.id, identity.id, now);
 
-    const symbol = (slug.replace(/[^a-z0-9]/g, '').toUpperCase().slice(0, 8) || 'CHAI');
-    const queue = c.env.TXQUEUE.getByName('operator');
-    await queue.enqueueRegisterGroup({
-      circleId: row.id,
-      owner,
-      name: name.slice(0, 19),
-      symbol,
-      description,
-    });
+    // ③ Optional on-chain Circles Base Group — only when enabled (needs a
+    // funded operator EOA). The groupchat works without it.
+    if (circlesEnabled(c.env) && owner) {
+      const symbol = slug.replace(/[^a-z0-9]/g, '').toUpperCase().slice(0, 8) || 'CHAI';
+      const queue = c.env.TXQUEUE.getByName('operator');
+      await queue.enqueueRegisterGroup({
+        circleId: row.id,
+        owner,
+        name: name.slice(0, 19),
+        symbol,
+        description,
+      });
+    }
 
-    log('info', 'circle created', { slug, communityDid, owner });
+    log('info', 'groupchat created', { slug, communityDid, mode });
     return c.json(
       {
         slug,
@@ -503,6 +523,7 @@ export function buildApp(env: Env) {
         channel: row.channel,
         communityDid,
         groupAddress: null,
+        mode,
         memberCount: 1,
         joined: true,
       },
@@ -520,10 +541,52 @@ export function buildApp(env: Env) {
     const identity = await store.getIdentityById(claims.iid);
     if (!identity) return c.json({ error: 'Unauthorized' }, 401);
 
+    // ——— Mutual-trust access control ———
+    if (circle.mode === 'mutual-trust') {
+      // Joiner must have a Circles Safe.
+      if (identity.platform !== 'circles') {
+        return c.json(
+          { error: 'TrustRequired', message: 'connect a Circles account to join this groupchat' },
+          403,
+        );
+      }
+      const creator = await store.getIdentityById(circle.creatorIdentityId);
+      const creatorSafe = circle.ownerAddress ?? creator?.platformUserId ?? null;
+      if (!creatorSafe) {
+        return c.json({ error: 'TrustRequired', message: 'groupchat has no trust anchor' }, 403);
+      }
+      // Self-join (creator) always allowed; otherwise require mutual trust.
+      if (creatorSafe.toLowerCase() !== identity.platformUserId.toLowerCase()) {
+        let mutual = false;
+        try {
+          // Dev loop: fake Safe addresses aren't on the real graph. Treat
+          // addresses ending in matching last hex char as "mutual" so the
+          // gate can be exercised locally; otherwise block.
+          mutual =
+            c.env.DEV_FAKE_EPDS === '1'
+              ? creatorSafe.slice(-1) === identity.platformUserId.slice(-1)
+              : await isMutualTrust(creatorSafe, identity.platformUserId);
+        } catch (err) {
+          log('warn', 'trust check failed', { err: String(err) });
+          return c.json({ error: 'TrustCheckUnavailable' }, 503);
+        }
+        if (!mutual) {
+          return c.json(
+            {
+              error: 'TrustRequired',
+              message: 'you and the creator must trust each other on Circles to join',
+              creatorSafe,
+            },
+            403,
+          );
+        }
+      }
+    }
+
     await store.addCircleMember(circle.id, identity.id, Date.now());
 
-    // On-chain trust only applies to members with a Safe; if the group is
-    // still registering, the register job backfills trust afterwards.
+    // On-chain trust (if the group was registered) — queue trust.add for the
+    // joiner's Safe so they become an on-chain group member too.
     let trusted = false;
     if (identity.platform === 'circles' && circle.groupAddress) {
       const queue = c.env.TXQUEUE.getByName('operator');
@@ -533,7 +596,7 @@ export function buildApp(env: Env) {
         groupAddress: circle.groupAddress,
         memberAddress: identity.platformUserId,
       });
-      trusted = true; // queued — trusted_at lands when the tx confirms
+      trusted = true;
     }
     return c.json({ ok: true, trusted });
   });

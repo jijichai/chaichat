@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../store';
-import { api, type CircleSummary } from '../auth/api';
+import { api, ApiError, type CircleSummary } from '../auth/api';
 import { fmtPreview, nickColor, initials } from '../chat/format';
 import { CreateCircleModal } from './CreateCircleModal';
 
@@ -16,18 +16,15 @@ export function ChatsTab() {
   const joinChannel = useApp((s) => s.joinChannel);
 
   const [circles, setCircles] = useState<CircleSummary[] | null>(null);
-  const [circlesEnabled, setCirclesEnabled] = useState(false);
   const [selected, setSelected] = useState<CircleSummary | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   const refresh = () => {
     api
       .listCircles(session?.sessionJwt)
-      .then((r) => {
-        setCircles(r.circles);
-        setCirclesEnabled(r.circlesEnabled);
-      })
+      .then((r) => setCircles(r.circles))
       .catch(() => setCircles([]));
   };
   useEffect(refresh, [session?.sessionJwt]);
@@ -46,16 +43,33 @@ export function ChatsTab() {
   const discover = (circles ?? []).filter((c) => !joinedChannelNames.has(c.channel));
 
   const join = async (circle: CircleSummary) => {
-    if (guest || !session) {
+    setJoinError(null);
+    // Open groupchats: guests can enter the room directly.
+    if (circle.mode === 'open' && (guest || !session)) {
       joinChannel(circle.channel);
       setSelected(null);
+      return;
+    }
+    if (!session) {
+      setJoinError('sign in to join');
       return;
     }
     setJoining(true);
     try {
       await api.joinCircle(session.sessionJwt, circle.slug);
-    } catch {
-      // membership record failed — still let them into the room
+    } catch (err) {
+      setJoining(false);
+      if (err instanceof ApiError && err.code === 'TrustRequired') {
+        setJoinError(
+          'you and the creator must trust each other on Circles to join this groupchat',
+        );
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'TrustCheckUnavailable') {
+        setJoinError('couldn’t check trust right now — try again in a moment');
+        return;
+      }
+      // Other failures (membership record): still let them into the room.
     } finally {
       setJoining(false);
     }
@@ -67,15 +81,13 @@ export function ChatsTab() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <span className="text-lg font-semibold">chaichat</span>
-        {circlesEnabled ? (
-          <button
-            onClick={() => setCreateOpen(true)}
-            disabled={guest || !session}
-            className="rounded-xl bg-chai px-3 py-1.5 text-sm font-medium text-bg disabled:opacity-40"
-          >
-            ◯ New circle
-          </button>
-        ) : null}
+        <button
+          onClick={() => setCreateOpen(true)}
+          disabled={guest || !session}
+          className="rounded-xl bg-chai px-3 py-1.5 text-sm font-medium text-bg disabled:opacity-40"
+        >
+          + New groupchat
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto">
@@ -119,7 +131,7 @@ export function ChatsTab() {
 
             {discover.length > 0 ? (
               <div className="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-ink-dim">
-                Discover circles
+                Discover groupchats
               </div>
             ) : null}
             {discover.map((c) => (
@@ -135,10 +147,12 @@ export function ChatsTab() {
                   {initials(c.name)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{c.name}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate font-medium">{c.name}</span>
+                    <ModeBadge mode={c.mode} />
+                  </div>
                   <div className="truncate text-xs text-ink-dim">
-                    {c.groupAddress ? 'on-chain ✓' : 'registering…'} · {c.memberCount}{' '}
-                    {c.memberCount === 1 ? 'member' : 'members'}
+                    {c.memberCount} {c.memberCount === 1 ? 'member' : 'members'}
                     {c.description ? ` · ${c.description}` : ''}
                   </div>
                 </div>
@@ -147,11 +161,9 @@ export function ChatsTab() {
 
             {rooms.length === 0 && discover.length === 0 ? (
               <div className="flex flex-col items-center gap-2 px-10 py-12 text-center">
-                <div className="text-3xl">◯</div>
+                <div className="text-3xl">💬</div>
                 <p className="text-sm text-ink-dim">
-                  {circlesEnabled
-                    ? 'no circles yet — start the first one: a chatroom with its own identity and on-chain Circles group'
-                    : "you're all set — say hi in the rooms above"}
+                  you're all set — say hi above, or start a new groupchat
                 </p>
               </div>
             ) : null}
@@ -162,7 +174,10 @@ export function ChatsTab() {
       {selected ? (
         <div
           className="fixed inset-0 z-40 flex items-end justify-center bg-black/60"
-          onClick={() => setSelected(null)}
+          onClick={() => {
+            setSelected(null);
+            setJoinError(null);
+          }}
         >
           <div
             className="w-full max-w-sm rounded-t-2xl bg-surface p-5"
@@ -175,26 +190,31 @@ export function ChatsTab() {
               >
                 {initials(selected.name)}
               </div>
-              <div>
-                <div className="font-semibold">{selected.name}</div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate font-semibold">{selected.name}</span>
+                  <ModeBadge mode={selected.mode} />
+                </div>
                 <div className="text-xs text-ink-dim">
-                  {selected.memberCount} {selected.memberCount === 1 ? 'member' : 'members'} ·{' '}
-                  {selected.groupAddress ? 'on-chain ✓' : 'registering…'}
+                  {selected.memberCount} {selected.memberCount === 1 ? 'member' : 'members'}
                 </div>
               </div>
             </div>
             {selected.description ? (
               <p className="pb-2 text-sm text-ink-dim">"{selected.description}"</p>
             ) : null}
-            <div className="pb-3 text-[10px] text-ink-dim">
-              {selected.communityDid}
-              {selected.groupAddress ? (
-                <>
-                  <br />
-                  group: {selected.groupAddress}
-                </>
-              ) : null}
-            </div>
+            {selected.mode === 'mutual-trust' ? (
+              <p className="pb-2 text-xs text-ink-dim">
+                🤝 you and the creator must trust each other on Circles to join.
+              </p>
+            ) : null}
+
+            {joinError ? (
+              <div className="mb-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+                {joinError}
+              </div>
+            ) : null}
+
             <button
               onClick={() => void join(selected)}
               disabled={joining}
@@ -217,5 +237,20 @@ export function ChatsTab() {
         />
       ) : null}
     </div>
+  );
+}
+
+function ModeBadge({ mode }: { mode: CircleSummary['mode'] }) {
+  if (mode === 'mutual-trust') {
+    return (
+      <span className="shrink-0 rounded-full bg-chai/15 px-1.5 py-0.5 text-[10px] text-chai-soft">
+        🤝 trust
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-dim">
+      🌐 open
+    </span>
   );
 }

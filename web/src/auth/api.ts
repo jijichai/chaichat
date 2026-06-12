@@ -21,6 +21,8 @@ export interface TokensResponse {
   backupEmailSet: boolean;
 }
 
+export type CircleMode = 'open' | 'mutual-trust';
+
 export interface CircleSummary {
   slug: string;
   name: string;
@@ -28,6 +30,7 @@ export interface CircleSummary {
   channel: string;
   communityDid: string;
   groupAddress: string | null;
+  mode: CircleMode;
   memberCount: number;
   joined?: boolean;
 }
@@ -113,12 +116,16 @@ export const api = {
     }),
 
   listCircles: (sessionJwt?: string) =>
-    request<{ circles: CircleSummary[]; circlesEnabled: boolean }>('/api/circles', {}, sessionJwt),
+    request<{ circles: CircleSummary[]; createEnabled: boolean; onChainEnabled: boolean }>(
+      '/api/circles',
+      {},
+      sessionJwt,
+    ),
 
-  createCircle: (sessionJwt: string, name: string, description?: string) =>
+  createCircle: (sessionJwt: string, name: string, mode: CircleMode, description?: string) =>
     request<CircleSummary>(
       '/api/circles',
-      { method: 'POST', body: JSON.stringify({ name, description }) },
+      { method: 'POST', body: JSON.stringify({ name, mode, description }) },
       sessionJwt,
     ),
 

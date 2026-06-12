@@ -31,6 +31,7 @@ interface CircleDbRow {
   group_address: string | null;
   owner_address: string | null;
   creator_identity_id: string;
+  mode: string;
   created_at: number;
   member_count?: number;
 }
@@ -62,6 +63,7 @@ function circleFromDb(r: CircleDbRow): CircleRow {
     groupAddress: r.group_address,
     ownerAddress: r.owner_address,
     creatorIdentityId: r.creator_identity_id,
+    mode: r.mode === 'mutual-trust' ? 'mutual-trust' : 'open',
     createdAt: r.created_at,
   };
 }
@@ -234,8 +236,8 @@ export class D1Storage implements Storage {
       .prepare(
         `INSERT INTO circles
          (id, slug, name, description, channel, community_did, group_address,
-          owner_address, creator_identity_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          owner_address, creator_identity_id, mode, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         row.id,
@@ -247,6 +249,7 @@ export class D1Storage implements Storage {
         row.groupAddress,
         row.ownerAddress,
         row.creatorIdentityId,
+        row.mode,
         row.createdAt,
       )
       .run();
