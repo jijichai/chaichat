@@ -50,6 +50,12 @@ export function ChatsTab() {
     (c) => !c.pinned && !joinedChannelNames.has(c.channel),
   );
 
+  // Map each joined channel to its access mode (from its circle row, if any).
+  // Plain channels with no circle row — e.g. the default #chaichat — are open.
+  const channelMode = new Map<string, CircleSummary['mode']>(
+    (circles ?? []).map((c) => [c.channel, c.mode]),
+  );
+
   // Resolve the Circles profiles of the latest-message senders so room
   // previews show usernames, not DID nicks.
   const previewAuthors = rooms
@@ -139,12 +145,7 @@ export function ChatsTab() {
                   onClick={() => (joinedRoom ? setActive(c.channel) : setSelected(c))}
                   className="flex w-full items-center gap-3 border-b border-border/50 bg-chai/[0.04] px-4 py-3 text-left active:bg-surface"
                 >
-                  <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-bg"
-                    style={{ background: nickColor(c.slug) }}
-                  >
-                    {initials(c.name)}
-                  </div>
+                  <CircleIcon circle={c} size={40} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px]" title="pinned">
@@ -187,10 +188,11 @@ export function ChatsTab() {
                       {ch.name.startsWith('#') ? '#' : initials(ch.name)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="truncate font-medium">{ch.name}</span>
+                        <ModeBadge mode={channelMode.get(ch.name) ?? 'open'} />
                         {ch.unread > 0 ? (
-                          <span className="rounded-full bg-chai px-1.5 text-[11px] font-bold text-bg">
+                          <span className="ml-auto rounded-full bg-chai px-1.5 text-[11px] font-bold text-bg">
                             {ch.unread}
                           </span>
                         ) : null}
@@ -218,12 +220,7 @@ export function ChatsTab() {
                 onClick={() => setSelected(c)}
                 className="flex w-full items-center gap-3 border-b border-border/50 px-4 py-3 text-left active:bg-surface"
               >
-                <div
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-bg"
-                  style={{ background: nickColor(c.slug) }}
-                >
-                  {initials(c.name)}
-                </div>
+                <CircleIcon circle={c} size={40} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="truncate font-medium">{c.name}</span>
@@ -262,12 +259,7 @@ export function ChatsTab() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 pb-2">
-              <div
-                className="flex h-12 w-12 items-center justify-center rounded-full text-base font-bold text-bg"
-                style={{ background: nickColor(selected.slug) }}
-              >
-                {initials(selected.name)}
-              </div>
+              <CircleIcon circle={selected} size={48} />
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate font-semibold">{selected.name}</span>
@@ -319,6 +311,28 @@ export function ChatsTab() {
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+/** A circle's avatar: its group profile image if available, else colored initials. */
+function CircleIcon({ circle, size }: { circle: CircleSummary; size: number }) {
+  if (circle.icon) {
+    return (
+      <img
+        src={circle.icon}
+        alt=""
+        className="shrink-0 rounded-full object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center rounded-full font-bold text-bg"
+      style={{ width: size, height: size, background: nickColor(circle.slug), fontSize: size * 0.36 }}
+    >
+      {initials(circle.name)}
     </div>
   );
 }

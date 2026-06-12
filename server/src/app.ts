@@ -56,6 +56,21 @@ const profileCache = new Map<
   { value: { displayName: string | null; avatar: string | null }; expires: number }
 >();
 
+// Address-keyed avatar cache for circle (group) icons, e.g. the gating Circles
+// group of a circles-group chat. Group avatars change very rarely.
+const groupIconCache = new Map<string, { value: string | null; expires: number }>();
+
+/** Fetch a Circles group/avatar's image (data: URI) by address, cached. */
+async function fetchGroupIcon(address: string): Promise<string | null> {
+  const key = address.toLowerCase();
+  const cached = groupIconCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.value;
+  const profile = await fetchCirclesProfile(address);
+  const value = profile?.avatar ?? null;
+  groupIconCache.set(key, { value, expires: Date.now() + PROFILE_TTL_MS });
+  return value;
+}
+
 type Vars = {
   store: Storage;
   session?: SessionClaims;
@@ -509,6 +524,27 @@ export function buildApp(env: Env) {
       if (pa !== pb) return pa - pb;
       return b.createdAt - a.createdAt;
     });
+
+    // For group-gated circles, use the gating Circles group's own profile image
+    // (IPFS, returned as a data: URI) as the chat icon instead of initials.
+    const iconAddrs = [
+      ...new Set(
+        sorted
+          .filter((x) => x.mode === 'circles-group' && x.gateGroupAddress)
+          .map((x) => x.gateGroupAddress!.toLowerCase()),
+      ),
+    ];
+    const iconByAddr = new Map<string, string | null>();
+    await Promise.all(
+      iconAddrs.map(async (addr) => {
+        try {
+          iconByAddr.set(addr, await fetchGroupIcon(addr));
+        } catch {
+          iconByAddr.set(addr, null);
+        }
+      }),
+    );
+
     return c.json({
       // Groupchat creation is always available now (lightweight: DID + channel
       // + access mode, no on-chain group). The on-chain Base Group is the only
@@ -524,6 +560,7 @@ export function buildApp(env: Env) {
         groupAddress: x.groupAddress,
         mode: x.mode,
         gateGroupAddress: x.gateGroupAddress,
+        icon: x.gateGroupAddress ? (iconByAddr.get(x.gateGroupAddress.toLowerCase()) ?? null) : null,
         pinned: PINNED_SLUGS.has(x.slug),
         memberCount: x.memberCount,
         joined: joined.has(x.slug),

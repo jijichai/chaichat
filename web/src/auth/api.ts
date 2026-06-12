@@ -33,6 +33,8 @@ export interface CircleSummary {
   mode: CircleMode;
   /** For mode='circles-group': the Circles group whose members may join. */
   gateGroupAddress?: string | null;
+  /** Group profile image (data: URI), e.g. the gating Circles group's avatar. */
+  icon?: string | null;
   /** Built-in groupchat pinned to the top of the list. */
   pinned?: boolean;
   memberCount: number;

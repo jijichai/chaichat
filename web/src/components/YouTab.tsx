@@ -173,6 +173,10 @@ export function YouTab() {
             desc="message contents are not yet E2E encrypted — the server can read them. trust-gated E2EE for groupchats is coming soon."
           />
         </div>
+        <p className="mt-3 border-t border-border/50 pt-2 text-[10px] text-ink-dim/70">
+          chat is powered by IRC (Internet Relay Chat) — the open, decades-old
+          real-time messaging protocol.
+        </p>
       </div>
 
       <div className="mx-4 rounded-2xl border border-border bg-surface p-4">
